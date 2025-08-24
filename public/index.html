@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>ดูบอลสดทุกลีก (สะอาด ไม่มีโฆษณา)</title>
+<style>
+  :root{--bg:#0f172a;--card:#111827;--muted:#94a3b8;--fg:#e5e7eb;--accent:#22c55e;}
+  html,body{margin:0;background:var(--bg);color:var(--fg);font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+  .wrap{max-width:1100px;margin:auto;padding:16px}
+  h1{font-size:1.6rem;margin:0 0 10px}
+  .controls{display:grid;grid-template-columns:1fr 160px 160px 160px;gap:8px;margin:12px 0 16px}
+  .controls input,.controls select,.controls button{
+    padding:10px 12px;border-radius:12px;border:1px solid #1f2937;background:#0b1220;color:var(--fg)
+  }
+  .controls button{cursor:pointer}
+  .cols{display:grid;grid-template-columns:1fr;gap:16px}
+  .league{background:var(--card);border:1px solid #1f2937;border-radius:18px;padding:14px}
+  .league h2{font-size:1.1rem;margin:0 0 8px;color:#d1fae5}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px}
+  .card{background:#0b1220;border:1px solid #1f2937;border-radius:16px;padding:12px;display:flex;flex-direction:column;gap:8px}
+  .teams{font-weight:800}
+  .muted{color:var(--muted);font-size:.9rem}
+  .btn{display:inline-flex;gap:6px;align-items:center;text-decoration:none;color:#0b1220;background:var(--accent);border-radius:12px;padding:8px 12px;font-weight:700}
+  .badge{font-size:.75rem;border:1px solid #334155;border-radius:999px;padding:2px 8px;color:var(--muted)}
+  .live{color:#ef4444;font-weight:800;border-color:#ef4444}
+  .footer{opacity:.7;font-size:.85rem;margin-top:14px}
+  .empty{opacity:.7;text-align:center;padding:24px;border:1px dashed #334155;border-radius:16px}
+  @media(max-width:720px){.controls{grid-template-columns:1fr 1fr 1fr}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>ดูบอลสดทุกลีก (สะอาด ไม่มีโฆษณา)</h1>
+  <div class="controls">
+    <input id="q" placeholder="ค้นหาทีม… เช่น บาร์ซ่า, Liverpool, BGPU">
+    <select id="status">
+      <option value="">ทุกสถานะ</option>
+      <option value="live">กำลังแข่ง</option>
+      <option value="upcoming">ยังไม่เริ่ม</option>
+      <option value="finished">จบแล้ว</option>
+    </select>
+    <button id="todayBtn">เฉพาะวันนี้</button>
+    <button id="reloadBtn">รีเฟรช</button>
+  </div>
+
+  <div id="container"></div>
+  <div id="empty" class="empty" style="display:none">ยังไม่พบรายการ—ลองกด “รีเฟรช” หรือรอสักครู่</div>
+
+  <div class="footer">
+    ข้อมูลดึงจาก <b>goal-th.com</b> แล้วเรนเดอร์ใหม่แบบไม่มีโฆษณา (สำหรับใช้งานส่วนตัว/ทดสอบ) แหล่งหน้าแรกอ้างอิง ณ ปัจจุบัน. 
+  </div>
+</div>
+
+<script>
+const API = "/api/matches";
+const elQ = document.getElementById('q');
+const elStatus = document.getElementById('status');
+const elToday = document.getElementById('todayBtn');
+const elReload = document.getElementById('reloadBtn');
+const elContainer = document.getElementById('container');
+const elEmpty = document.getElementById('empty');
+
+let onlyToday = false;
+let raw = [];
+
+elToday.addEventListener('click', ()=>{ onlyToday = !onlyToday; elToday.style.background = onlyToday ? '#059669' : ''; render(); });
+elQ.addEventListener('input', render);
+elStatus.addEventListener('change', render);
+elReload.addEventListener('click', load);
+
+function sameDay(d, now=new Date()){
+  if (!d) return false;
+  const x = new Date(d.replace(' ','T'));
+  return x.getFullYear()===now.getFullYear() && x.getMonth()===now.getMonth() && x.getDate()===now.getDate();
+}
+function fmt(d){
+  if (!d) return '—';
+  const x = new Date(d.replace(' ','T'));
+  const pad = n => String(n).padStart(2,'0');
+  return `${pad(x.getDate())}/${pad(x.getMonth()+1)}/${x.getFullYear()} ${pad(x.getHours())}:${pad(x.getMinutes())}`;
+}
+
+function groupByLeague(arr){
+  const out = {};
+  arr.forEach(x=>{
+    const lg = x.league || 'อื่นๆ';
+    if (!out[lg]) out[lg] = [];
+    out[lg].push(x);
+  });
+  // เรียงภายในแต่ละลีกตามเวลา
+  Object.keys(out).forEach(k=>{
+    out[k].sort((a,b)=>{
+      const ta = a.time ? new Date(a.time.replace(' ','T')).getTime() : Infinity;
+      const tb = b.time ? new Date(b.time.replace(' ','T')).getTime() : Infinity;
+      return ta - tb;
+    });
+  });
+  return out;
+}
+
+function render(){
+  const term = elQ.value.trim().toLowerCase();
+  const st = elStatus.value;
+
+  const filtered = raw.filter(m=>{
+    const t = `${m.home} ${m.away}`.toLowerCase();
+    if (term && !t.includes(term)) return false;
+    if (st && m.status !== st) return false;
+    if (onlyToday && !sameDay(m.time)) return false;
+    return true;
+  });
+
+  const groups = groupByLeague(filtered);
+  const leagues = Object.keys(groups);
+  elContainer.innerHTML = '';
+
+  if (!leagues.length){ elEmpty.style.display = 'block'; return }
+  elEmpty.style.display = 'none';
+
+  leagues.forEach(lg=>{
+    const sec = document.createElement('section');
+    sec.className = 'league';
+    const h2 = document.createElement('h2');
+    h2.textContent = lg;
+    const grid = document.createElement('div');
+    grid.className = 'grid';
+
+    groups[lg].forEach(m=>{
+      const card = document.createElement('div');
+      card.className = 'card';
+      const tms = document.createElement('div');
+      tms.className = 'teams';
+      tms.textContent = `${m.home || 'ทีม A'}  vs  ${m.away || 'ทีม B'}`;
+
+      const meta = document.createElement('div');
+      meta.className = 'muted';
+      meta.innerHTML = `เวลา: ${fmt(m.time)} &nbsp; <span class="badge ${m.status==='live'?'live':''}">${m.status || '—'}</span>`;
+
+      const a = document.createElement('a');
+      a.className = 'btn';
+      a.href = m.url;
+      a.target = '_blank';
+      a.rel = 'noopener';
+      a.textContent = 'ดูถ่ายทอดสด';
+
+      card.appendChild(tms);
+      card.appendChild(meta);
+      card.appendChild(a);
+      grid.appendChild(card);
+    });
+
+    sec.appendChild(h2);
+    sec.appendChild(grid);
+    elContainer.appendChild(sec);
+  });
+}
+
+async function load(){
+  elReload.disabled = true;
+  try{
+    const r = await fetch(API, { cache: 'no-store' });
+    const data = await r.json();
+    raw = Array.isArray(data.matches) ? data.matches : [];
+    render();
+  }catch(e){
+    console.error(e);
+    elContainer.innerHTML = '';
+    elEmpty.style.display = 'block';
+  }finally{
+    elReload.disabled = false;
+  }
+}
+
+load();
+</script>
+</body>
+</html>
