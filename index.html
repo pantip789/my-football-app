@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>ดูบอลสด (ไม่มีโฆษณา)</title>
+<style>
+  body { background:#0f172a; color:#fff; font-family:sans-serif; margin:0; padding:20px; }
+  h1 { font-size:1.4rem; margin-bottom:16px }
+  .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(260px,1fr)); gap:12px; }
+  .card { background:#111827; border-radius:12px; padding:12px; }
+  .teams { font-weight:700; margin-bottom:6px }
+  .time, .league { font-size:.9rem; color:#a1a1aa }
+  .btn { display:inline-block; margin-top:10px; padding:6px 12px; background:#22c55e; color:#000; border-radius:8px; text-decoration:none; font-weight:600 }
+</style>
+</head>
+<body>
+  <h1>ตารางถ่ายทอดสด (Goal-TH แบบสะอาด)</h1>
+  <div id="grid" class="grid"></div>
+
+<script>
+async function load() {
+  try {
+    const res = await fetch("/api/matches");
+    const data = await res.json();
+    const grid = document.getElementById("grid");
+    grid.innerHTML = "";
+
+    data.forEach(m => {
+      const card = document.createElement("div");
+      card.className = "card";
+      card.innerHTML = `
+        <div class="teams">${m.home} vs ${m.away}</div>
+        <div class="time">เวลา: ${m.time}</div>
+        <div class="league">${m.league}</div>
+        <a href="${m.url}" target="_blank" class="btn">ดูถ่ายทอดสด</a>
+      `;
+      grid.appendChild(card);
+    });
+  } catch(e) {
+    document.getElementById("grid").innerHTML = "โหลดข้อมูลไม่สำเร็จ 😢";
+  }
+}
+load();
+</script>
+</body>
+</html>
